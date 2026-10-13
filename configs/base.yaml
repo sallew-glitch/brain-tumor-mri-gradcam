@@ -1,0 +1,41 @@
+# Default settings shared by every experiment. Other configs inherit with `_base_: base.yaml`
+# and override only what they change. Every key is documented in src/btmri/config.py.
+name: baseline
+seed: 42
+device: auto            # auto picks cuda > xpu (Intel GPU) > mps > cpu
+output_dir: outputs/runs
+folds: [1, 2, 3, 4, 5]  # test folds; a fresh model is trained for each
+
+data:
+  processed_dir: data/processed
+  image_size: 224
+  batch_size: 32
+  num_workers: 2
+  fold_source: official # patient-disjoint folds from cvind.mat
+  n_folds: 5
+
+augment:
+  enabled: true
+  hflip_p: 0.5
+  rotation_deg: 10
+  crop_scale_min: 0.85
+  brightness: 0.1
+  contrast: 0.1
+
+model:
+  name: resnet18
+  pretrained: true
+  drop_rate: 0.2
+
+train:
+  epochs: 15
+  lr: 3.0e-4
+  backbone_lr_mult: 1.0
+  weight_decay: 1.0e-4
+  freeze_backbone_epochs: 1
+  label_smoothing: 0.0
+  class_weighted_loss: true
+  monitor: macro_f1
+  early_stopping_patience: 5
+  amp: true
+  max_batches_per_epoch: null

@@ -1,0 +1,33 @@
+# ---- Data, results and model weights: never commit ----
+# The dataset is large and has its own licence; anyone can download it from Figshare.
+# The leading "/" matters: it matches only the top-level folders, not src/btmri/data/.
+/data/
+/outputs/
+*.zip
+*.mat
+# Trained model weights (~45 MB each); share them as GitHub Release assets if needed.
+*.pt
+*.pth
+*.safetensors
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ---- Secrets ----
+.env
+
+# ---- Editors and OS ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

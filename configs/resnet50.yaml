@@ -1,0 +1,7 @@
+# GPU experiment (e.g. Google Colab T4).
+_base_: base.yaml
+name: resnet50
+model:
+  name: resnet50
+train:
+  epochs: 20

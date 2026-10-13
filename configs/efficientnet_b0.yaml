@@ -1,0 +1,8 @@
+# GPU experiment (e.g. Google Colab T4). EfficientNets usually like a higher learning rate.
+_base_: base.yaml
+name: efficientnet_b0
+model:
+  name: efficientnet_b0
+train:
+  epochs: 20
+  lr: 1.0e-3

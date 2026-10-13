@@ -1,0 +1,7 @@
+# GPU experiment (e.g. Google Colab T4).
+_base_: base.yaml
+name: densenet121
+model:
+  name: densenet121
+train:
+  epochs: 20

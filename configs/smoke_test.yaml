@@ -1,0 +1,10 @@
+# A ~1 minute run that only checks the pipeline works end to end. Scores are meaningless.
+_base_: base.yaml
+name: smoke_test
+folds: [1]
+data:
+  batch_size: 16
+  num_workers: 0
+train:
+  epochs: 2
+  max_batches_per_epoch: 5
