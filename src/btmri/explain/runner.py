@@ -1,9 +1,12 @@
-"""Run Grad-CAM over a trained fold's test set and score it against the tumor masks.
+"""Run Grad-CAM over one fold of a trained run and score it against the tumor masks.
 
-Writes to ``<run_dir>/fold_<k>/gradcam/``:
-    localization.csv   one row per test image (prediction + localization metrics)
+Writes to ``<run_dir>/fold_<k>/gradcam_<split>_<layer>/``:
+    localization.csv   one row per image (prediction + localization metrics)
     summary.json       averages overall, per class, and for correct vs. wrong predictions
     examples.png       heatmaps for a sample of correct and misclassified images
+
+Use ``split="val"`` when comparing models or layers, and ``split="test"`` only for the final
+report, so the test patients never influence which model you pick.
 """
 
 from __future__ import annotations
@@ -14,7 +17,7 @@ from pathlib import Path
 
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 from tqdm import tqdm
 
 from btmri.config import ExperimentConfig, config_from_dict
@@ -28,6 +31,8 @@ from btmri.viz import plot_image_grid
 
 logger = logging.getLogger(__name__)
 
+SPLITS = ("test", "val")
+
 
 def load_trained_model(checkpoint_path: str | Path, device: torch.device):
     """Rebuild the model from the config stored inside the checkpoint."""
@@ -39,16 +44,39 @@ def load_trained_model(checkpoint_path: str | Path, device: torch.device):
     return model.to(device).eval(), cfg, checkpoint
 
 
-def _pick_examples(predictions: pd.DataFrame, n: int, seed: int) -> set[int]:
+def gradcam_dir_name(split: str, layer: str | None) -> str:
+    return f"gradcam_{split}_{(layer or 'last').replace('.', '-')}"
+
+
+def _pick_examples(results: pd.DataFrame, n: int, seed: int) -> list[int]:
     """Up to half misclassified images, the rest correct ones, chosen at random."""
-    wrong = predictions[predictions["label"] != predictions["pred"]]
-    right = predictions[predictions["label"] == predictions["pred"]]
+    wrong = results[~results["correct"]]
+    right = results[results["correct"]]
     n_wrong = min(len(wrong), n // 2)
     chosen = pd.concat([
-        wrong.sample(n_wrong, random_state=seed),
         right.sample(min(len(right), n - n_wrong), random_state=seed),
+        wrong.sample(n_wrong, random_state=seed),
     ])
-    return set(chosen["image_id"].astype(int))
+    return chosen["image_id"].astype(int).tolist()
+
+
+def _plot_examples(gradcam: GradCAM, dataset: BrainTumorDataset, image_ids: list[int],
+                   class_names: list[str], target: str, device: torch.device, path: Path) -> None:
+    index_of = {int(i): pos for pos, i in enumerate(dataset.metadata["image_id"])}
+    batch = next(iter(DataLoader(Subset(dataset, [index_of[i] for i in image_ids]),
+                                 batch_size=len(image_ids))))
+    images, labels = batch["image"].to(device), batch["label"].to(device)
+    cams, logits = gradcam(images, labels if target == "true" else None)
+    preds = logits.argmax(1)
+    titles = [
+        f"#{image_id} true={class_names[int(labels[i])]}\npred={class_names[int(preds[i])]}"
+        + ("" if labels[i] == preds[i] else "  (WRONG)")
+        for i, image_id in enumerate(batch["image_id"].tolist())
+    ]
+    plot_image_grid(
+        list(denormalize(images)[:, 0].cpu().numpy()), titles, path,
+        masks=list(batch["mask"].numpy()), heatmaps=list(cams.cpu().numpy()),
+    )
 
 
 def explain_fold(
@@ -58,10 +86,15 @@ def explain_fold(
     device: str = "auto",
     processed_dir: str | None = None,
     target: str = "predicted",
+    split: str = "test",
+    layer: str | None = None,
 ) -> dict:
-    """``target``: explain the "predicted" class (what the model did) or the "true" class."""
+    """``target``: explain the "predicted" class (what the model did) or the "true" class.
+    ``split``: "test" or "val". ``layer``: see ``btmri.explain.gradcam``."""
+    if split not in SPLITS:
+        raise ValueError(f"split must be one of {SPLITS}, got {split!r}")
     fold_dir = Path(run_dir) / f"fold_{fold}"
-    out_dir = fold_dir / "gradcam"
+    out_dir = fold_dir / gradcam_dir_name(split, layer)
     out_dir.mkdir(exist_ok=True)
     dev = get_device(device)
 
@@ -70,18 +103,17 @@ def explain_fold(
     if processed_dir:  # e.g. a model trained on Colab, explained on a laptop
         cfg.data.processed_dir = processed_dir
 
-    test = load_split(cfg, fold).test
+    metadata = getattr(load_split(cfg, fold), split)
     size = cfg.data.image_size
     dataset = BrainTumorDataset(
-        test, cfg.data.processed_dir, build_eval_transform(size), return_mask=True, mask_size=size
+        metadata, cfg.data.processed_dir, build_eval_transform(size), return_mask=True, mask_size=size
     )
     loader = DataLoader(dataset, batch_size=cfg.data.batch_size, shuffle=False)
-    example_ids = _pick_examples(pd.read_csv(fold_dir / "predictions.csv"), num_examples, cfg.seed)
 
-    gradcam = GradCAM(model)
-    patient_of = dict(zip(test["image_id"], test["patient_id"], strict=True))
-    rows, examples = [], []
-    for batch in tqdm(loader, desc=f"Grad-CAM fold {fold}"):
+    gradcam = GradCAM(model, layer)
+    patient_of = dict(zip(metadata["image_id"], metadata["patient_id"], strict=True))
+    rows = []
+    for batch in tqdm(loader, desc=f"Grad-CAM fold {fold} ({split}, {layer or 'last'})"):
         images, labels = batch["image"].to(dev), batch["label"].to(dev)
         cams, logits = gradcam(images, labels if target == "true" else None)
         preds = logits.argmax(1)
@@ -95,19 +127,13 @@ def explain_fold(
                 "correct": label == pred,
                 **localization_metrics(cams[i].cpu(), batch["mask"][i]),
             })
-            if image_id in example_ids:
-                examples.append({
-                    "image": denormalize(images[i : i + 1])[0, 0].cpu().numpy(),
-                    "cam": cams[i].cpu().numpy(),
-                    "mask": batch["mask"][i].numpy(),
-                    "title": f"#{image_id} true={class_names[label]}\npred={class_names[pred]}"
-                             + ("" if label == pred else "  (WRONG)"),
-                })
 
     results = pd.DataFrame(rows)
     results.to_csv(out_dir / "localization.csv", index=False)
     metric_cols = ["mask_area_frac", *LOCALIZATION_METRICS]
     summary = {
+        "split": split,
+        "layer": gradcam.layer_name or "last",
         "target": target,
         "overall": results[metric_cols].mean().to_dict(),
         "by_true_class": results.groupby("label")[metric_cols].mean().to_dict(orient="index"),
@@ -116,17 +142,14 @@ def explain_fold(
     }
     (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
 
-    if examples:
-        examples.sort(key=lambda e: "WRONG" in e["title"])
-        plot_image_grid(
-            [e["image"] for e in examples], [e["title"] for e in examples], out_dir / "examples.png",
-            masks=[e["mask"] for e in examples], heatmaps=[e["cam"] for e in examples],
-        )
+    if num_examples > 0:
+        example_ids = _pick_examples(results, num_examples, cfg.seed)
+        _plot_examples(gradcam, dataset, example_ids, class_names, target, dev, out_dir / "examples.png")
 
     overall = summary["overall"]
     logger.info(
-        "Fold %d Grad-CAM | pointing game %.3f | energy in tumor %.3f (%.1fx chance) | IoU %.3f",
-        fold, overall["pointing_hit"], overall["energy_in_mask"],
+        "Fold %d Grad-CAM (%s, %s) | pointing game %.3f | energy in tumor %.3f (%.1fx chance) | IoU %.3f",
+        fold, split, summary["layer"], overall["pointing_hit"], overall["energy_in_mask"],
         overall["energy_ratio_vs_chance"], overall["iou"],
     )
     return summary

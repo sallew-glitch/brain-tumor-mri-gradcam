@@ -74,6 +74,8 @@ def make_loader(
     dataset: Dataset, cfg: ExperimentConfig, shuffle: bool, device: torch.device
 ) -> DataLoader:
     workers = cfg.data.num_workers
+    if workers is None:
+        workers = 0 if device.type == "cpu" else 2
     return DataLoader(
         dataset,
         batch_size=cfg.data.batch_size,

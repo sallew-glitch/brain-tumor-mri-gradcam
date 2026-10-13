@@ -10,7 +10,7 @@ data:
   processed_dir: data/processed
   image_size: 224
   batch_size: 32
-  num_workers: 2
+  num_workers: null     # auto: 0 on CPU, 2 on GPU
   fold_source: official # patient-disjoint folds from cvind.mat
   n_folds: 5
 

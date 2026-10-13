@@ -29,7 +29,9 @@ class DataConfig:
     processed_dir: str = "data/processed"
     image_size: int = 224
     batch_size: int = 32
-    num_workers: int = 2
+    # Background processes that load images. None = automatic: 0 on CPU (they would compete
+    # with the model for cores and cost ~1 GB RAM each on Windows), 2 on a GPU.
+    num_workers: int | None = None
     # "official": the patient-disjoint 5-fold split shipped with the dataset (cvind.mat).
     # "stratified_group": regenerate patient-disjoint folds with StratifiedGroupKFold(seed).
     fold_source: str = "official"

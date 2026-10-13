@@ -72,7 +72,9 @@ python scripts/train.py --config configs/resnet18_cpu.yaml --folds 1        # on
 python scripts/train.py --config configs/resnet18_cpu.yaml --set train.lr=1e-4   # change a setting
 
 # 3. Grad-CAM heatmaps + localization scores
-python scripts/explain.py --run-dir outputs/runs/<run_name>
+#    Compare models/layers on the validation fold; use --split test only for the final report.
+#    Layers: last (7x7 grid), penultimate (14x14 grid), or a module name such as layer3.
+python scripts/explain.py --run-dir outputs/runs/<run_name> --split val --layers last penultimate
 
 # 4. Compare runs (choose settings by the VAL column, not test)
 python scripts/compare_runs.py
@@ -87,7 +89,7 @@ config.yaml, train.log, summary.json       settings, log, cross-validation summa
 fold_k/best.pt                             best checkpoint (chosen on the validation fold)
 fold_k/curves.png, confusion_matrix.png    training curves, test confusion matrix
 fold_k/test_metrics.json, predictions.csv  test scores, per-image probabilities
-fold_k/gradcam/                            heatmap examples and localization scores
+fold_k/gradcam_<split>_<layer>/            heatmap examples and localization scores
 ```
 
 ## Method
@@ -100,7 +102,7 @@ fold_k/gradcam/                            heatmap examples and localization sco
 | Training | AdamW, cosine learning-rate schedule, head-only first epoch, class-weighted cross-entropy |
 | Model selection | Best validation macro-F1 epoch; early stopping (patience 5) |
 | Evaluation | Official patient-disjoint 5 folds: test = fold k, validation = fold k+1, train = the rest |
-| Explainability | Grad-CAM on the last convolutional layer, scored against tumor masks |
+| Explainability | Grad-CAM on the last or second-to-last stage, scored against tumor masks |
 
 Design decisions and how to extend the code are in [docs/DESIGN.md](docs/DESIGN.md).
 

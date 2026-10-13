@@ -1,10 +1,6 @@
-# Laptop-friendly baseline that runs on a CPU. Try a single fold first: --folds 1
+# Laptop-friendly baseline that runs on a CPU (~30 min per fold).
 _base_: base.yaml
 name: resnet18_cpu
-data:
-  # On a CPU, loader processes compete with the model for the same cores and each costs ~1 GB
-  # of memory on Windows; loading 256px PNGs in the main process is fast enough.
-  num_workers: 0
 model:
   name: resnet18
 train:

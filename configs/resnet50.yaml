@@ -1,4 +1,5 @@
-# GPU experiment (e.g. Google Colab T4).
+# Same training recipe as the other models, so differences come from the architecture.
+# ~6 min/epoch on a laptop CPU; much faster on a GPU (e.g. Colab T4).
 _base_: base.yaml
 name: resnet50
 model:

@@ -4,7 +4,6 @@ name: smoke_test
 folds: [1]
 data:
   batch_size: 16
-  num_workers: 0
 train:
   epochs: 2
   max_batches_per_epoch: 5

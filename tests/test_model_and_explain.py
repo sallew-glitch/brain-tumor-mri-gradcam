@@ -42,6 +42,22 @@ def test_gradcam_works_with_frozen_backbone(tiny_model):
         set_backbone_trainable(tiny_model, True)
 
 
+@pytest.mark.parametrize("name", ["resnet18", "efficientnet_b0", "densenet121"])
+@pytest.mark.parametrize("layer, grid", [("last", 2), ("penultimate", 4)])
+def test_gradcam_layers_work_for_every_model_family(name, layer, grid):
+    model = build_model(ModelConfig(name=name, pretrained=False), num_classes=3)
+    gradcam = GradCAM(model, layer)
+    features, _ = gradcam._features_and_logits(torch.randn(1, 3, 64, 64))
+    assert features.shape[-1] == grid  # 64px input: last stage is 64/32, the one before 64/16
+    cams, logits = gradcam(torch.randn(2, 3, 64, 64))
+    assert cams.shape == (2, 64, 64) and logits.shape == (2, 3)
+
+
+def test_gradcam_rejects_unknown_layer(tiny_model):
+    with pytest.raises(AttributeError):
+        GradCAM(tiny_model, "layer99")
+
+
 def test_localization_perfect_and_miss():
     mask = np.zeros((10, 10))
     mask[2:5, 2:5] = 1
